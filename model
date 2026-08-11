@@ -1,0 +1,386 @@
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
+
+# ============================================================
+# 1.
+# ============================================================
+
+
+sequences = ["A", "AA", "AAB", "AABA", "AABAC"]
+masses = np.array([100, 200, 250, 350, 500], dtype=np.float32)
+rts = np.array([1.0, 2.0, 2.5, 3.5, 5.0], dtype=np.float32)
+
+# Create transition records.
+# The label is the monomer that was ADDED during each transition.
+transitions = []
+
+for i in range(1, len(sequences)):
+    prev_mass = masses[i - 1]
+    prev_rt = rts[i - 1]
+
+    curr_mass = masses[i]
+    curr_rt = rts[i]
+
+    added_monomer = sequences[i][-1]
+
+    transitions.append({
+        "prev_mass": prev_mass,
+        "prev_rt": prev_rt,
+        "curr_mass": curr_mass,
+        "curr_rt": curr_rt,
+        "delta_mass": curr_mass - prev_mass,
+        "delta_rt": curr_rt - prev_rt,
+        "label": added_monomer
+    })
+
+print("Transitions:")
+for t in transitions:
+    print(t)
+
+
+# ============================================================
+# 2. 
+# ============================================================
+
+unique_labels = sorted(set(t["label"] for t in transitions))
+label_to_id = {label: i for i, label in enumerate(unique_labels)}
+id_to_label = {i: label for label, i in label_to_id.items()}
+
+print("\nLabel map:")
+print(label_to_id)
+
+
+# ============================================================
+# 3.
+# ============================================================
+#
+
+
+X = np.array([
+    [
+        t["prev_mass"],
+        t["prev_rt"],
+        t["curr_mass"],
+        t["curr_rt"],
+        t["delta_mass"],
+        t["delta_rt"]
+    ]
+    for t in transitions
+], dtype=np.float32)
+
+y = np.array([
+    label_to_id[t["label"]]
+    for t in transitions
+], dtype=np.int64)
+
+
+# ============================================================
+# 4.
+# ============================================================
+
+mean = X.mean(axis=0)
+std = X.std(axis=0)
+
+# Prevent divide-by-zero
+std[std < 1e-8] = 1.0
+
+X_normalized = (X - mean) / std
+
+
+# ============================================================
+# 5.
+# ============================================================
+
+class PeptideTransitionDataset(Dataset):
+    def __init__(self, X, y):
+        self.X = torch.tensor(X, dtype=torch.float32)
+        self.y = torch.tensor(y, dtype=torch.long)
+
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, idx):
+        return self.X[idx], self.y[idx]
+
+
+dataset = PeptideTransitionDataset(X_normalized, y)
+
+loader = DataLoader(
+    dataset,
+    batch_size=len(dataset),
+    shuffle=True
+)
+
+
+# ============================================================
+# 6. 
+# ============================================================
+
+class MetricAutoencoder(nn.Module):
+    def __init__(
+        self,
+        input_dim=6,
+        hidden_dim=32,
+        latent_dim=2
+    ):
+        super().__init__()
+
+        # -------------------------
+        # Encoder
+        # -------------------------
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.ReLU(),
+
+            nn.Linear(hidden_dim // 2, latent_dim)
+        )
+
+        # -------------------------
+        # Decoder
+        # -------------------------
+        self.decoder = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dim // 2),
+            nn.ReLU(),
+
+            nn.Linear(hidden_dim // 2, hidden_dim),
+            nn.ReLU(),
+
+            nn.Linear(hidden_dim, input_dim)
+        )
+
+    def forward(self, x):
+        z = self.encoder(x)
+
+        reconstruction = self.decoder(z)
+
+        return reconstruction, z
+
+
+# ============================================================
+# 7.
+# ============================================================
+
+class SupervisedContrastiveLoss(nn.Module):
+    """
+    Pulls embeddings with the same monomer label together
+    and pushes embeddings with different labels apart.
+    """
+
+    def __init__(self, temperature=0.1):
+        super().__init__()
+
+        self.temperature = temperature
+
+    def forward(self, embeddings, labels):
+
+        # Normalize embeddings
+        z = F.normalize(embeddings, dim=1)
+
+        # Pairwise cosine similarity
+        similarity = torch.matmul(z, z.T)
+
+        similarity = similarity / self.temperature
+
+        batch_size = embeddings.shape[0]
+
+        # Remove self-comparison
+        self_mask = torch.eye(
+            batch_size,
+            dtype=torch.bool,
+            device=embeddings.device
+        )
+
+        # Positive pairs:
+        # same label, but not same sample
+        label_matrix = labels.unsqueeze(0) == labels.unsqueeze(1)
+
+        positive_mask = label_matrix & (~self_mask)
+
+        # Numerical stability
+        logits = similarity - similarity.max(
+            dim=1,
+            keepdim=True
+        ).values.detach()
+
+        # Remove self from denominator
+        exp_logits = torch.exp(logits) * (~self_mask)
+
+        log_prob = logits - torch.log(
+            exp_logits.sum(dim=1, keepdim=True) + 1e-8
+        )
+
+        positive_count = positive_mask.sum(dim=1)
+
+        # Only samples having at least one positive pair
+        valid = positive_count > 0
+
+        if valid.sum() == 0:
+            return torch.tensor(
+                0.0,
+                device=embeddings.device,
+                requires_grad=True
+            )
+
+        mean_log_prob_positive = (
+            (positive_mask.float() * log_prob).sum(dim=1)
+            / positive_count.clamp(min=1)
+        )
+
+        loss = -mean_log_prob_positive[valid].mean()
+
+        return loss
+
+
+# ============================================================
+# 8. 
+# ============================================================
+
+device = torch.device(
+    "cuda" if torch.cuda.is_available() else "cpu"
+)
+
+model = MetricAutoencoder(
+    input_dim=X_normalized.shape[1],
+    hidden_dim=32,
+    latent_dim=2
+).to(device)
+
+contrastive_loss_fn = SupervisedContrastiveLoss(
+    temperature=0.1
+)
+
+reconstruction_loss_fn = nn.MSELoss()
+
+optimizer = torch.optim.Adam(
+    model.parameters(),
+    lr=1e-3
+)
+
+
+# ============================================================
+# 9.
+# ============================================================
+
+
+lambda_metric = 0.5
+
+epochs = 1000
+
+model.train()
+
+for epoch in range(epochs):
+
+    epoch_loss = 0
+
+    for batch_x, batch_y in loader:
+
+        batch_x = batch_x.to(device)
+        batch_y = batch_y.to(device)
+
+        optimizer.zero_grad()
+
+        reconstruction, z = model(batch_x)
+
+        reconstruction_loss = reconstruction_loss_fn(
+            reconstruction,
+            batch_x
+        )
+
+        metric_loss = contrastive_loss_fn(
+            z,
+            batch_y
+        )
+
+        total_loss = (
+            reconstruction_loss
+            + lambda_metric * metric_loss
+        )
+
+        total_loss.backward()
+
+        optimizer.step()
+
+        epoch_loss += total_loss.item()
+
+    if epoch % 100 == 0:
+
+        print(
+            f"Epoch {epoch:4d} | "
+            f"Total: {total_loss.item():.4f} | "
+            f"Recon: {reconstruction_loss.item():.4f} | "
+            f"Metric: {metric_loss.item():.4f}"
+        )
+
+
+# ============================================================
+# 10. 
+# ============================================================
+
+model.eval()
+
+with torch.no_grad():
+
+    X_tensor = torch.tensor(
+        X_normalized,
+        dtype=torch.float32
+    ).to(device)
+
+    reconstruction, embeddings = model(X_tensor)
+
+    embeddings = embeddings.cpu().numpy()
+
+
+print("\nLearned embeddings:")
+
+for i, embedding in enumerate(embeddings):
+
+    label = id_to_label[y[i]]
+
+    print(
+        f"Transition {i}: "
+        f"added={label}, "
+        f"embedding={embedding}"
+    )
+
+
+# ============================================================
+# 11. 
+# ============================================================
+
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(7, 6))
+
+for label_id, label_name in id_to_label.items():
+
+    indices = y == label_id
+
+    plt.scatter(
+        embeddings[indices, 0],
+        embeddings[indices, 1],
+        label=label_name,
+        s=100
+    )
+
+for i, t in enumerate(transitions):
+
+    plt.annotate(
+        t["label"],
+        (
+            embeddings[i, 0],
+            embeddings[i, 1]
+        )
+    )
+
+plt.xlabel("Latent dimension 1")
+plt.ylabel("Latent dimension 2")
+plt.title("Metric-learning peptide transition embeddings")
+plt.legend(title="Added monomer")
+
+plt.show()
