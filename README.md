@@ -152,12 +152,12 @@ For real data, replace the test folder with your dedicated training directory:
   /absolute/path/to/my-training-data 200 64
 ```
 
-## 5. Peak CSV format for `usage_cpp`
+## 5. Input CSV format for `usage_cpp`
 
 The prediction input is one CSV file with this schema:
 
 ```csv
-mass,rt
+MM,GG
 10.0,1.0
 11.0,1.2
 12.0,1.5
@@ -182,7 +182,7 @@ Run the prediction using the model produced in the previous step:
   /tmp/autoencoder-run/autoencoder_model.pt \
   /tmp/autoencoder-run/norm.txt \
   "$PROJECT_ROOT/cpp/tests/data/simple" \
-  "$PROJECT_ROOT/cpp/tests/peaks.csv" \
+  "$PROJECT_ROOT/cpp/tests/input.csv" \
   A
 ```
 
