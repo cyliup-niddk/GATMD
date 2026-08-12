@@ -10,19 +10,19 @@ from torch.utils.data import Dataset, DataLoader
 
 
 sequences = ["A", "AA", "AAB", "AABA", "AABAC"]
-masses = np.array([100, 200, 250, 350, 500], dtype=np.float32)
-rts = np.array([1.0, 2.0, 2.5, 3.5, 5.0], dtype=np.float32)
+ms = np.array([100, 200, 250, 350, 500], dtype=np.float32)
+gts = np.array([1.0, 2.0, 2.5, 3.5, 5.0], dtype=np.float32)
 
 # Create transition records.
 # The label is the monomer that was ADDED during each transition.
 transitions = []
 
 for i in range(1, len(sequences)):
-    prev_m = masses[i - 1]
-    prev_gt = rts[i - 1]
+    prev_m = ms[i - 1]
+    prev_gt = gts[i - 1]
 
-    curr_m = masses[i]
-    curr_gt = rts[i]
+    curr_m = ms[i]
+    curr_gt = gts[i]
 
     added_monomer = sequences[i][-1]
 
