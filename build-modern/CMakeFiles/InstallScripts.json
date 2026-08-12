@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/run/media/liveuser/SANDI_LARGE/autoencoder/cpp/build-modern/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

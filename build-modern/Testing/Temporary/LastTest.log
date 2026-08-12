@@ -1,0 +1,29 @@
+Start testing: Aug 12 04:02 UTC
+----------------------------------------------------------
+1/1 Testing: autoencoder_integration
+1/1 Test: autoencoder_integration
+Command: "/usr/bin/cmake" "-DEXECUTABLE=/run/media/liveuser/SANDI_LARGE/autoencoder/cpp/build-modern/autoencoder_cpp" "-DFIXTURE_DIR=/run/media/liveuser/SANDI_LARGE/autoencoder/cpp/tests/data" "-DOUTPUT_DIR=/run/media/liveuser/SANDI_LARGE/autoencoder/cpp/build-modern/integration-output" "-P" "/run/media/liveuser/SANDI_LARGE/autoencoder/cpp/tests/integration_test.cmake"
+Directory: /run/media/liveuser/SANDI_LARGE/autoencoder/cpp/build-modern
+"autoencoder_integration" start time: Aug 12 04:02 UTC
+Output:
+----------------------------------------------------------
+CMake Error at /run/media/liveuser/SANDI_LARGE/autoencoder/cpp/tests/integration_test.cmake:10 (message):
+  autoencoder failed (permission denied)
+
+  stdout:
+
+
+
+  stderr:
+
+
+
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Failed.
+"autoencoder_integration" end time: Aug 12 04:02 UTC
+"autoencoder_integration" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Aug 12 04:02 UTC
