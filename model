@@ -18,21 +18,21 @@ rts = np.array([1.0, 2.0, 2.5, 3.5, 5.0], dtype=np.float32)
 transitions = []
 
 for i in range(1, len(sequences)):
-    prev_mass = masses[i - 1]
-    prev_rt = rts[i - 1]
+    prev_m = masses[i - 1]
+    prev_gt = rts[i - 1]
 
-    curr_mass = masses[i]
-    curr_rt = rts[i]
+    curr_m = masses[i]
+    curr_gt = rts[i]
 
     added_monomer = sequences[i][-1]
 
     transitions.append({
-        "prev_mass": prev_mass,
-        "prev_rt": prev_rt,
-        "curr_mass": curr_mass,
-        "curr_rt": curr_rt,
-        "delta_mass": curr_mass - prev_mass,
-        "delta_rt": curr_rt - prev_rt,
+        "prev_m": prev_m,
+        "prev_gt": prev_gt,
+        "curr_m": curr_m,
+        "curr_gt": curr_gt,
+        "delta_mass": curr_m - prev_m,
+        "delta_rt": curr_gt - prev_gt,
         "label": added_monomer
     })
 
@@ -61,10 +61,10 @@ print(label_to_id)
 
 X = np.array([
     [
-        t["prev_mass"],
-        t["prev_rt"],
-        t["curr_mass"],
-        t["curr_rt"],
+        t["prev_m"],
+        t["prev_gt"],
+        t["curr_m"],
+        t["curr_gt"],
         t["delta_mass"],
         t["delta_rt"]
     ]
